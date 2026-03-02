@@ -1,0 +1,49 @@
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.Python
+.venv/
+env/
+ENV/
+*.egg-info/
+
+# YouTube Credentials (WICHTIG: NICHT COMMITTEN!)
+config/client_secrets.json
+youtube_token.pickle
+config/youtube_config.py
+
+# Videos und Output
+input/
+output/
+
+# FFmpeg temporäre Dateien
+*.mp4
+*.avi
+*.mov
+*.mkv
+transition.mp4
+
+# CSV Backups
+segments_orig.csv
+*.csv.bak
+
+# IDEs
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+
+# OS
+.DS_Store
+Thumbs.db
+
+# project
+segments*.csv
+
+output/
+input/
+
+settings.json

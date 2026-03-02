@@ -1,0 +1,39 @@
+# YouTube Upload Konfiguration
+#
+# Kopiere diese Datei nach youtube_config.py und passe die Werte an:
+#   cp youtube_config.py.dist youtube_config.py
+#
+# Alle Einstellungen können über CLI-Parameter überschrieben werden.
+
+# ── Playlist ─────────────────────────────────────────────────────────────────
+# Standard YouTube Playlist-ID (z.B. "PLxxxxxxxxxxxxxxxxxxx")
+# Lasse leer (None) wenn keine Standard-Playlist gewünscht ist
+YOUTUBE_DEFAULT_PLAYLIST = None
+
+# ── Privatsphäre ─────────────────────────────────────────────────────────────
+# Optionen: "public"   – Öffentlich sichtbar
+#           "private"  – Nur für dich sichtbar
+#           "unlisted" – Nur mit Link aufrufbar (empfohlen zum Testen)
+YOUTUBE_DEFAULT_PRIVACY = "unlisted"
+
+# ── Upload aktiviert? ────────────────────────────────────────────────────────
+# True  = Videos werden nach Erstellung automatisch hochgeladen
+# False = Nur lokale Video-Erstellung, kein Upload
+# CLI: --no-upload zum Deaktivieren
+YOUTUBE_UPLOAD_ENABLED = False
+
+# ── Video-Kategorie ──────────────────────────────────────────────────────────
+# Häufige Kategorien:
+#   "1"  = Film & Animation       "17" = Sports
+#   "2"  = Autos & Vehicles       "20" = Gaming
+#   "10" = Music                  "22" = People & Blogs
+#   "15" = Pets & Animals         "24" = Entertainment
+#   "17" = Sports                 "27" = Education
+# Vollständige Liste: https://developers.google.com/youtube/v3/docs/videoCategories/list
+YOUTUBE_DEFAULT_CATEGORY = "17"
+
+# ── Tags ─────────────────────────────────────────────────────────────────────
+# Komma-getrennte Liste von Tags (optional)
+# Hilft bei der Auffindbarkeit der Videos auf YouTube
+# Beispiel: "Fußball,Spielanalyse,Training,E-Jugend"
+YOUTUBE_DEFAULT_TAGS = "Fußball,Spielanalyse,Training"

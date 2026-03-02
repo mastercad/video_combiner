@@ -1,0 +1,55 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512">
+  <defs>
+    <linearGradient id="bg" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0%" stop-color="#1a3a1a"/>
+      <stop offset="100%" stop-color="#0d1f0d"/>
+    </linearGradient>
+  </defs>
+
+  <!-- Runder Hintergrund (dunkelgrün, Rasen) -->
+  <circle cx="256" cy="256" r="248" fill="url(#bg)" stroke="#2e7d32" stroke-width="8"/>
+
+  <!-- Fußball – oben links -->
+  <g transform="translate(185, 185) scale(0.85)">
+    <circle cx="0" cy="0" r="100" fill="#fff" stroke="#bbb" stroke-width="2"/>
+    <!-- Fünfeck-Muster -->
+    <polygon points="0,-42 -40,-13 -25,34 25,34 40,-13" fill="#333"/>
+    <polygon points="0,-100 -26,-72 -15,-45 15,-45 26,-72" fill="#333" opacity="0.75"/>
+    <polygon points="-95,-31 -80,-5 -52,-5 -42,-28 -72,-52" fill="#333" opacity="0.75"/>
+    <polygon points="95,-31 80,-5 52,-5 42,-28 72,-52" fill="#333" opacity="0.75"/>
+    <polygon points="-59,81 -35,98 0,85 -8,58 -40,45" fill="#333" opacity="0.75"/>
+    <polygon points="59,81 35,98 0,85 8,58 40,45" fill="#333" opacity="0.75"/>
+  </g>
+
+  <!-- Schere: lange spitze Klingen, gekreuzt -->
+  <g transform="translate(350, 335) scale(1.2)">
+
+    <!-- === Arm 1 (hinten): Klinge oben-links → Öse unten-rechts === -->
+    <!-- Klinge 1: lang, schmal, nadelspitz -->
+    <path d="M-90,-30 L2,-4 L2,2 L-85,-22 Z"
+          fill="#d4d4d4" stroke="#777" stroke-width="1"/>
+    <!-- Schaft 1 -->
+    <path d="M2,3 L28,18" stroke="#999" stroke-width="7" stroke-linecap="round"/>
+    <!-- Öse 1 -->
+    <ellipse cx="48" cy="30" rx="20" ry="15" fill="none" stroke="#d32f2f" stroke-width="6"
+             transform="rotate(30,48,30)"/>
+
+    <!-- === Arm 2 (vorne): Klinge unten-links → Öse oben-rechts === -->
+    <!-- Klinge 2: lang, schmal, nadelspitz -->
+    <path d="M-90,30 L2,4 L2,-2 L-85,22 Z"
+          fill="#ddd" stroke="#777" stroke-width="1"/>
+    <!-- Schaft 2 -->
+    <path d="M2,-3 L28,-18" stroke="#aaa" stroke-width="7" stroke-linecap="round"/>
+    <!-- Öse 2 -->
+    <ellipse cx="48" cy="-30" rx="20" ry="15" fill="none" stroke="#d32f2f" stroke-width="6"
+             transform="rotate(-30,48,-30)"/>
+
+    <!-- Niete / Drehpunkt -->
+    <circle cx="0" cy="0" r="5" fill="#777" stroke="#555" stroke-width="1.5"/>
+  </g>
+
+  <!-- "KB" Text unten -->
+  <text x="256" y="460" text-anchor="middle"
+        font-family="Arial Black, Arial, sans-serif" font-weight="900"
+        font-size="68" fill="#4CAF50" letter-spacing="6">KB</text>
+</svg>

@@ -1,0 +1,8 @@
+moviepy==1.0.3
+pandas==2.0.3
+numpy==1.24.3
+tqdm
+google-api-python-client
+google-auth-oauthlib
+google-auth-httplib2
+PyQt5
