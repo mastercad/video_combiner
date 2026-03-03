@@ -179,11 +179,11 @@ class VideoSegmentGUI(QMainWindow):
 
     def _build_logo_group(self):
         grp = QGroupBox("Logo")
-        lay = QHBoxLayout(grp)
+        lay = QVBoxLayout(grp)
+
+        lay.addStretch()
 
         # Logo-Preview zentriert (horizontal + vertikal)
-        preview_col = QVBoxLayout()
-        preview_col.addStretch()
         self.logo_preview = QLabel()
         self.logo_preview.setFixedSize(80, 80)
         self.logo_preview.setScaledContents(True)
@@ -192,26 +192,25 @@ class VideoSegmentGUI(QMainWindow):
         )
         self.logo_preview.setAlignment(Qt.AlignCenter)
         self.logo_preview.setText("Kein\nLogo")
-        preview_col.addWidget(self.logo_preview, 0, Qt.AlignHCenter)
+        lay.addWidget(self.logo_preview, 0, Qt.AlignHCenter)
+
         self.logo_path_label = QLabel("Kein Logo ausgewählt")
         self.logo_path_label.setWordWrap(True)
         self.logo_path_label.setAlignment(Qt.AlignCenter)
         self.logo_path_label.setStyleSheet("font-size: 9px; color: #666;")
-        preview_col.addWidget(self.logo_path_label, 0, Qt.AlignHCenter)
-        preview_col.addStretch()
-        lay.addLayout(preview_col)
+        lay.addWidget(self.logo_path_label, 0, Qt.AlignHCenter)
 
-        right = QVBoxLayout()
+        lay.addStretch()
 
         btn_row = QHBoxLayout()
+        btn_row.addStretch()
         sel_btn = QPushButton("Auswählen...")
         sel_btn.clicked.connect(self._select_logo)
         btn_row.addWidget(sel_btn)
         clr_btn = QPushButton("Entfernen")
         clr_btn.clicked.connect(self._clear_logo)
         btn_row.addWidget(clr_btn)
-        right.addLayout(btn_row)
-        lay.addLayout(right)
+        lay.addLayout(btn_row)
 
         self._update_logo_preview()
         return grp
