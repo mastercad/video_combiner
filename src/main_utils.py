@@ -113,6 +113,7 @@ def run_video_pipeline(segments, options, log_callback=None):
         return {'success': False, 'output_file': None, 'video_id': None,
                 'error': 'Keine Segmente vorhanden.'}
 
+
     log(f"=== KADERBLICK Video Combiner ===")
     log(f"Gefunden: {len(segments)} Segmente")
     log(f"Input-Verzeichnis: {input_dir}")

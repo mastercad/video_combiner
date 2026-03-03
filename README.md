@@ -434,15 +434,15 @@ Alle Formate, die FFmpeg verarbeiten kann – insbesondere **MP4**, **MOV** und 
 
 ### Wie lange dauert die Verarbeitung?
 
-Das hängt von der Anzahl und Länge der Szenen ab. Als Richtwert:
-- **Mit GPU** (NVIDIA): ca. 1,5× Echtzeit (10 Min. Video → ~7 Min.)
-- **Ohne GPU**: ca. 0,3× Echtzeit (10 Min. Video → ~30 Min.)
+Das hängt von der Anzahl und Länge der Szenen ab. Als Richtwert (reines erstellen des endgültigen Videos, ohne Extraktion, Verarbeitung und Upload):
+- **Mit GPU** (NVIDIA): ca. 1,5× Echtzeit (10 Min. Video → ~7 Min.), komplett mit anschließendem Upload bei 100MBit/s ca 30 Min.
+- **Ohne GPU**: ca. 0,3× Echtzeit (10 Min. Video → ~30 Min.), komplett mit anschließendem Upload bei 100MBit/s ca 90 Min.
 
 Bereits verarbeitete Szenen werden zwischengespeichert und müssen beim nächsten Durchlauf nicht erneut geschnitten werden.
 
 ### Kann ich Videos von verschiedenen Spieltagen kombinieren?
 
-Ja. Die Segmente können aus beliebig vielen verschiedenen Quellvideos und Spieltagen stammen. Der Dateiname wird automatisch aus allen vorkommenden Spieltag-Daten zusammengesetzt (z. B. `Spielanalyse_28_02_2026_07_03_2026.mp4`).
+Ja. Die Segmente können aus beliebig vielen verschiedenen Quellvideos und Spieltagen stammen. Der Dateiname wird automatisch aus allen vorkommenden Spieltag-Daten zusammengesetzt (z. B. `Spielanalyse_28_02_2026_07_03_2026.mp4`), kann aber für den upload nach YouTube unter "Erweiterte Optionen" auch manuell festgelegt werden.
 
 ### Was passiert bei unterschiedlichen Videoauflösungen?
 
@@ -514,7 +514,7 @@ Das Programm funktioniert auch ohne GPU – nur langsamer.
 Wenn etwas nicht stimmt, kannst du den Cache löschen. Alle Szenen und Titelkarten werden dann neu erstellt:
 
 ```bash
-# In der GUI: „Erweiterte Optionen" → „Cache löschen" ist geplant
+# In der GUI: „Erweiterte Optionen" → „Cache löschen"
 # In der CLI:
 python main.py --cli --clean-cache
 ```

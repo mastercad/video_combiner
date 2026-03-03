@@ -193,13 +193,15 @@ class VideoSegmentGUI(QMainWindow):
         self.logo_preview.setAlignment(Qt.AlignCenter)
         self.logo_preview.setText("Kein\nLogo")
         preview_col.addWidget(self.logo_preview, 0, Qt.AlignHCenter)
+        self.logo_path_label = QLabel("Kein Logo ausgewählt")
+        self.logo_path_label.setWordWrap(True)
+        self.logo_path_label.setAlignment(Qt.AlignCenter)
+        self.logo_path_label.setStyleSheet("font-size: 9px; color: #666;")
+        preview_col.addWidget(self.logo_path_label, 0, Qt.AlignHCenter)
         preview_col.addStretch()
         lay.addLayout(preview_col)
 
         right = QVBoxLayout()
-        self.logo_path_label = QLabel("Kein Logo ausgewählt")
-        self.logo_path_label.setWordWrap(True)
-        right.addWidget(self.logo_path_label)
 
         btn_row = QHBoxLayout()
         sel_btn = QPushButton("Auswählen...")
@@ -637,8 +639,9 @@ class VideoSegmentGUI(QMainWindow):
         }
 
         self.log_text.clear()
-        self.run_btn.setEnabled(False)
-        self.run_btn.setText("Läuft...")
+        self.run_btn.setText("⛔ Abbrechen")
+        self.run_btn.clicked.disconnect()
+        self.run_btn.clicked.connect(self._cancel_pipeline)
 
         self.pipeline_worker = PipelineWorker(list(self.segments), pipeline_opts)
         self.pipeline_worker.log_signal.connect(self._on_log)
@@ -651,7 +654,16 @@ class VideoSegmentGUI(QMainWindow):
         sb = self.log_text.verticalScrollBar()
         sb.setValue(sb.maximum())
 
+    def _cancel_pipeline(self):
+        """Bricht die laufende Pipeline ab."""
+        self.run_btn.setEnabled(False)
+        self._on_log("⚠️  Abbruch angefordert – ffmpeg-Prozesse werden beendet...")
+        from src.processing import cancel_pipeline
+        cancel_pipeline()
+
     def _on_pipeline_done(self, result):
+        self.run_btn.clicked.disconnect()
+        self.run_btn.clicked.connect(self._run_pipeline)
         self.run_btn.setEnabled(True)
         self.run_btn.setText("Video erstellen")
         if result["success"]:

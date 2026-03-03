@@ -11,7 +11,7 @@ from PyQt5.QtCore import QTime
 from PyQt5.QtWidgets import (
     QDialog, QDialogButtonBox, QVBoxLayout, QFormLayout,
     QTimeEdit, QCheckBox, QLineEdit, QComboBox, QTabWidget, QWidget,
-    QSpinBox,
+    QSpinBox, QPushButton, QMessageBox, QHBoxLayout,
 )
 
 
@@ -82,6 +82,17 @@ class YouTubeOptionsDialog(QDialog):
         )
         video_layout.addWidget(self.no_bitrate_limit_check)
 
+        cache_row = QHBoxLayout()
+        self.clean_cache_btn = QPushButton("\U0001f9f9 Cache löschen")
+        self.clean_cache_btn.setToolTip(
+            "Löscht alle Zwischendateien (Segmente und Titelkarten).\n"
+            "Alle Szenen werden beim nächsten Durchlauf neu erzeugt."
+        )
+        self.clean_cache_btn.clicked.connect(self._on_clean_cache)
+        cache_row.addWidget(self.clean_cache_btn)
+        cache_row.addStretch()
+        video_layout.addLayout(cache_row)
+
         self.shutdown_check = QCheckBox(
             "Rechner nach Fertigstellung herunterfahren"
         )
@@ -141,6 +152,15 @@ class YouTubeOptionsDialog(QDialog):
             "youtube_privacy": self.youtube_privacy_combo.currentText(),
             "youtube_tags": self.youtube_tags_edit.text().strip(),
         }
+
+    def _on_clean_cache(self):
+        """Löscht den Cache sofort und zeigt das Ergebnis."""
+        from src.main_utils import clean_cache
+        deleted = clean_cache()
+        QMessageBox.information(
+            self, "Cache gelöscht",
+            f"{deleted} Zwischendateien gelöscht."
+        )
 
 
 class EditSegmentDialog(QDialog):
