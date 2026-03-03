@@ -21,7 +21,7 @@ from PyQt5.QtWidgets import (
     QHeaderView, QSplitter, QGroupBox, QFormLayout,
     QDialog, QTextEdit,
 )
-from PyQt5.QtCore import Qt, QTime
+from PyQt5.QtCore import Qt, QTime, QTimer
 from PyQt5.QtGui import QFont, QIcon, QPixmap
 
 from src.gui.dialogs import TimeRangeDialog, YouTubeOptionsDialog
@@ -659,35 +659,72 @@ class VideoSegmentGUI(QMainWindow):
             vid = result.get("video_id")
             if vid:
                 msg += f"\nYouTube: https://www.youtube.com/watch?v={vid}"
-            QMessageBox.information(self, "Fertig", msg)
 
             if self.options.get("shutdown_after"):
+                self._on_log(f"✅ {msg}")
                 self._shutdown_system()
+            else:
+                QMessageBox.information(self, "Fertig", msg)
         else:
             QMessageBox.critical(
                 self, "Fehler", f"Pipeline fehlgeschlagen:\n{result['error']}"
             )
 
     def _shutdown_system(self):
-        """Fährt den Rechner nach einem Countdown herunter."""
-        import platform
-        countdown = 30
-        reply = QMessageBox.warning(
-            self, "Herunterfahren",
-            f"Der Rechner wird in {countdown} Sekunden heruntergefahren.\n\n"
-            "Abbrechen?",
-            QMessageBox.Cancel | QMessageBox.Ok,
-            QMessageBox.Cancel,
+        """Fährt den Rechner nach einem Countdown herunter (nicht-blockierend)."""
+        self._shutdown_remaining = 10
+        self._shutdown_dialog = QDialog(self)
+        self._shutdown_dialog.setWindowTitle("Herunterfahren")
+        self._shutdown_dialog.setFixedSize(370, 130)
+        self._shutdown_dialog.setWindowFlags(
+            self._shutdown_dialog.windowFlags() | Qt.WindowStaysOnTopHint
         )
-        if reply == QMessageBox.Cancel:
-            self._on_log("⚠️  Herunterfahren abgebrochen.")
-            return
 
-        self._on_log(f"🔌 Rechner wird in {countdown}s heruntergefahren...")
+        layout = QVBoxLayout(self._shutdown_dialog)
+        self._shutdown_label = QLabel(
+            f"Rechner wird in {self._shutdown_remaining} Sekunden heruntergefahren…"
+        )
+        self._shutdown_label.setAlignment(Qt.AlignCenter)
+        layout.addWidget(self._shutdown_label)
+
+        cancel_btn = QPushButton("Abbrechen")
+        cancel_btn.clicked.connect(self._cancel_shutdown)
+        layout.addWidget(cancel_btn, alignment=Qt.AlignCenter)
+
+        self._shutdown_timer = QTimer(self)
+        self._shutdown_timer.setInterval(1000)
+        self._shutdown_timer.timeout.connect(self._shutdown_tick)
+        self._shutdown_timer.start()
+
+        self._on_log(f"🔌 Rechner wird in {self._shutdown_remaining}s heruntergefahren...")
+        self._shutdown_dialog.show()
+
+    def _shutdown_tick(self):
+        """Countdown-Tick – führt bei 0 das Herunterfahren aus."""
+        self._shutdown_remaining -= 1
+        if self._shutdown_remaining <= 0:
+            self._shutdown_timer.stop()
+            self._shutdown_dialog.close()
+            self._execute_shutdown()
+        else:
+            self._shutdown_label.setText(
+                f"Rechner wird in {self._shutdown_remaining} Sekunden heruntergefahren…"
+            )
+
+    def _cancel_shutdown(self):
+        """Bricht den Shutdown-Countdown ab."""
+        self._shutdown_timer.stop()
+        self._shutdown_dialog.close()
+        self._on_log("⚠️  Herunterfahren abgebrochen.")
+
+    def _execute_shutdown(self):
+        """Führt den eigentlichen Shutdown-Befehl aus."""
+        import platform
+        self._on_log("🔌 Rechner wird jetzt heruntergefahren...")
         system = platform.system()
         if system == 'Linux':
-            os.system(f'shutdown -h +{countdown // 60} "KADERBLICK: Verarbeitung abgeschlossen"')
+            os.system('shutdown -h now "KADERBLICK: Verarbeitung abgeschlossen"')
         elif system == 'Windows':
-            os.system(f'shutdown /s /t {countdown} /c "KADERBLICK: Verarbeitung abgeschlossen"')
+            os.system('shutdown /s /t 0 /c "KADERBLICK: Verarbeitung abgeschlossen"')
         elif system == 'Darwin':
-            os.system(f'sudo shutdown -h +{countdown // 60}')
+            os.system('sudo shutdown -h now')
