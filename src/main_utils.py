@@ -103,6 +103,7 @@ def run_video_pipeline(segments, options, log_callback=None):
     output_file = options.get('output_file', None)
     use_audio = not options.get('no_audio', False)
     youtube_opt = options.get('youtube_opt', True)
+    no_bitrate_limit = options.get('no_bitrate_limit', False)
     workers = options.get('workers', None)
     debug_cache = options.get('debug_cache', False)
     logo_path = options.get('logo_path', 'input/teamlogo.png')
@@ -117,6 +118,8 @@ def run_video_pipeline(segments, options, log_callback=None):
     log(f"Input-Verzeichnis: {input_dir}")
     log(f"Audio: {'ja' if use_audio else 'nein'}")
     log(f"YouTube-Optimierung: {'ja' if youtube_opt else 'nein'}")
+    if no_bitrate_limit:
+        log(f"Bitrate-Limit: deaktiviert (YouTube-Begrenzung ignoriert)")
     if logo_path and Path(logo_path).exists():
         log(f"Logo: {logo_path}")
 
@@ -153,6 +156,7 @@ def run_video_pipeline(segments, options, log_callback=None):
                 source_codec=source_codec,
                 source_pix_fmt=source_pix_fmt,
                 source_fps_raw=source_fps_raw,
+                no_bitrate_limit=no_bitrate_limit,
             )
         except Exception as e:
             reset_terminal()

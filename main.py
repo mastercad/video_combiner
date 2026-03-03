@@ -85,6 +85,8 @@ def create_arg_parser():
                         help='Pfad zum Logo-Bild')
     parser.add_argument('--no-youtube-opt', action='store_true',
                         help='Verlustlose Ausgabe (nicht YouTube-optimiert)')
+    parser.add_argument('--no-bitrate-limit', action='store_true',
+                        help='Kein Bitrate-Limit (YouTube-Begrenzung ignorieren)')
     parser.add_argument('--shutdown', action='store_true',
                         help='Rechner nach Abschluss herunterfahren')
     parser.add_argument('--cli', action='store_true',
@@ -128,6 +130,7 @@ def main():
         'output_file': args.output,
         'no_audio': args.no_audio,
         'youtube_opt': not args.no_youtube_opt,
+        'no_bitrate_limit': args.no_bitrate_limit,
         'workers': args.workers,
         'debug_cache': args.debug_cache,
         'logo_path': args.logo,

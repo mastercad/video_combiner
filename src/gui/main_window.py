@@ -42,6 +42,7 @@ class VideoSegmentGUI(QMainWindow):
         self.options = {
             "no_audio": False,
             "no_youtube_opt": False,
+            "no_bitrate_limit": False,
             "shutdown_after": False,
             "youtube_upload": True,
             "youtube_title": "",
@@ -180,6 +181,9 @@ class VideoSegmentGUI(QMainWindow):
         grp = QGroupBox("Logo")
         lay = QHBoxLayout(grp)
 
+        # Logo-Preview zentriert (horizontal + vertikal)
+        preview_col = QVBoxLayout()
+        preview_col.addStretch()
         self.logo_preview = QLabel()
         self.logo_preview.setFixedSize(80, 80)
         self.logo_preview.setScaledContents(True)
@@ -188,7 +192,9 @@ class VideoSegmentGUI(QMainWindow):
         )
         self.logo_preview.setAlignment(Qt.AlignCenter)
         self.logo_preview.setText("Kein\nLogo")
-        lay.addWidget(self.logo_preview)
+        preview_col.addWidget(self.logo_preview, 0, Qt.AlignHCenter)
+        preview_col.addStretch()
+        lay.addLayout(preview_col)
 
         right = QVBoxLayout()
         self.logo_path_label = QLabel("Kein Logo ausgewählt")
@@ -441,11 +447,21 @@ class VideoSegmentGUI(QMainWindow):
                 return item
 
             self.segments_table.setItem(r, 0, _ro_item(name))
-            self.segments_table.setItem(r, 1, _ro_item(f"{mins:02d}:{secs:02d}"))
-            self.segments_table.setItem(r, 2, _ro_item(str(seg["length_seconds"])))
+
+            start_item = _ro_item(f"{mins:02d}:{secs:02d}")
+            start_item.setTextAlignment(Qt.AlignRight | Qt.AlignVCenter)
+            self.segments_table.setItem(r, 1, start_item)
+
+            dur_item = _ro_item(str(seg["length_seconds"]))
+            dur_item.setTextAlignment(Qt.AlignRight | Qt.AlignVCenter)
+            self.segments_table.setItem(r, 2, dur_item)
+
             self.segments_table.setItem(r, 3, QTableWidgetItem(seg["title"]))
             self.segments_table.setItem(r, 4, QTableWidgetItem(seg["sub_title"]))
-            self.segments_table.setItem(r, 5, _ro_item("Ja" if seg["audio"] else "Nein"))
+
+            audio_item = _ro_item("Ja" if seg["audio"] else "Nein")
+            audio_item.setTextAlignment(Qt.AlignRight | Qt.AlignVCenter)
+            self.segments_table.setItem(r, 5, audio_item)
         self.segments_table.blockSignals(False)
         self._resize_columns_to_content()
         self._update_total_duration()
@@ -578,6 +594,7 @@ class VideoSegmentGUI(QMainWindow):
         dlg = YouTubeOptionsDialog(self)
         dlg.no_audio_check.setChecked(self.options["no_audio"])
         dlg.no_youtube_opt_check.setChecked(self.options["no_youtube_opt"])
+        dlg.no_bitrate_limit_check.setChecked(self.options.get("no_bitrate_limit", False))
         dlg.shutdown_check.setChecked(self.options["shutdown_after"])
         dlg.youtube_upload_check.setChecked(self.options["youtube_upload"])
         dlg.youtube_title_edit.setText(self.options["youtube_title"])
@@ -606,6 +623,7 @@ class VideoSegmentGUI(QMainWindow):
             "output_file": None,
             "no_audio": self.options["no_audio"],
             "youtube_opt": not self.options["no_youtube_opt"],
+            "no_bitrate_limit": self.options.get("no_bitrate_limit", False),
             "workers": None,
             "debug_cache": False,
             "logo_path": self.options.get("logo_path", "") or "input/teamlogo.png",

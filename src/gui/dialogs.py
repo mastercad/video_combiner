@@ -73,6 +73,15 @@ class YouTubeOptionsDialog(QDialog):
         )
         video_layout.addWidget(self.no_youtube_opt_check)
 
+        self.no_bitrate_limit_check = QCheckBox(
+            "Kein Bitrate-Limit (YouTube-Begrenzung ignorieren)"
+        )
+        self.no_bitrate_limit_check.setToolTip(
+            "Deaktiviert die automatische Bitrate-Begrenzung auf YouTube-Empfehlungen.\n"
+            "Ergibt größere Dateien, kann aber für lokale Archivierung sinnvoll sein."
+        )
+        video_layout.addWidget(self.no_bitrate_limit_check)
+
         self.shutdown_check = QCheckBox(
             "Rechner nach Fertigstellung herunterfahren"
         )
@@ -124,6 +133,7 @@ class YouTubeOptionsDialog(QDialog):
         return {
             "no_audio": self.no_audio_check.isChecked(),
             "no_youtube_opt": self.no_youtube_opt_check.isChecked(),
+            "no_bitrate_limit": self.no_bitrate_limit_check.isChecked(),
             "shutdown_after": self.shutdown_check.isChecked(),
             "youtube_upload": self.youtube_upload_check.isChecked(),
             "youtube_title": self.youtube_title_edit.text().strip(),

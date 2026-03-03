@@ -227,6 +227,7 @@ Mögliche Meldungen:
 |---|---|
 | **Keine Audio-Spur** | Entfernt den Ton aus allen Segmenten und dem Endvideo |
 | **Verlustlose Ausgabe** | Erstellt das Video ohne YouTube-Komprimierung (größere Datei, volle Qualität) |
+| **Kein Bitrate-Limit** | Deaktiviert die automatische Bitrate-Begrenzung. Standardmäßig wird die Bitrate dynamisch an die Auflösung und Framerate angepasst, orientiert an den tatsächlichen YouTube-Streaming-Bitraten (z. B. 4K 30fps → max. 20 Mbps, 1080p 30fps → max. 6 Mbps). Mit dieser Option wird kein Limit gesetzt – sinnvoll für lokale Archivierung, führt aber zu deutlich größeren Dateien. |
 | **Rechner nach Fertigstellung herunterfahren** | Fährt den Computer automatisch herunter, sobald Verarbeitung und Upload fertig sind. Es erscheint vorher ein Hinweis mit Abbruchmöglichkeit. |
 
 ### Reiter „YouTube"
@@ -341,6 +342,7 @@ python main.py --cli \
 | `--workers` | `-w` | Anzahl paralleler Prozesse | CPU-Kerne − 2 |
 | `--no-audio` | | Kein Ton | aus |
 | `--no-youtube-opt` | | Keine YouTube-Komprimierung (volle Qualität) | aus |
+| `--no-bitrate-limit` | | Kein Bitrate-Limit (YouTube-Begrenzung ignorieren) | aus |
 | `--no-upload` | | YouTube-Upload deaktivieren | aus |
 | `--upload-only` | | Nur Upload, kein Videoschnitt | aus |
 | `--youtube-title` | | YouTube-Titel | aus Dateiname |

@@ -49,37 +49,114 @@ def detect_hw_encoder():
     return _hw_encoder
 
 
-def _build_video_encoder_args(quality='high'):
+def _get_youtube_maxrate(width, height, fps):
+    """Berechnet die optimale YouTube-Upload-Bitrate dynamisch anhand Auflösung und FPS.
+
+    Orientiert sich an der tatsächlichen YouTube-Ausgabe-Bitrate (VP9/AV1),
+    multipliziert mit ~1.3× als Qualitätsreserve für H.264→VP9-Transcodierung.
+
+    YouTube re-encodiert zu VP9/AV1 (30-50% effizienter als H.264). Die
+    tatsächlichen YouTube-Streaming-Bitraten liegen bei:
+      2160p (4K)  30fps: ~15 Mbps   60fps: ~22 Mbps   (VP9)
+      1440p       30fps: ~10 Mbps   60fps: ~15 Mbps
+      1080p       30fps:  ~5 Mbps   60fps:  ~7 Mbps
+       720p       30fps:  ~3 Mbps   60fps:  ~5 Mbps
+       480p       30fps: ~1.5 Mbps  60fps:  ~2 Mbps
+       360p       30fps: ~0.7 Mbps  60fps:  ~1 Mbps
+    Mehr als ~1.3× davon in H.264 hochzuladen bringt keinen sichtbaren
+    Qualitätsgewinn – YouTube re-encodiert alles.
+
+    Returns:
+        maxrate (int): Maximale Bitrate in Mbit/s
+    """
+    # Tabelle: (Mindest-Höhe, Upload-Bitrate 30fps, Upload-Bitrate 60fps)
+    # Basierend auf realer YouTube-Ausgabe × ~1.3 Headroom
+    yt_tiers = [
+        (2160, 20, 30),   # YouTube VP9: ~15/~22 Mbps → Upload H.264: 20/30
+        (1440, 13, 20),   # YouTube VP9: ~10/~15 Mbps → Upload H.264: 13/20
+        (1080,  6.5, 9),  # YouTube VP9:  ~5/ ~7 Mbps → Upload H.264: 6.5/9
+        (720,   4,  6.5), # YouTube VP9:  ~3/ ~5 Mbps → Upload H.264: 4/6.5
+        (480,   2,  2.5), # YouTube VP9: ~1.5/~2 Mbps → Upload H.264: 2/2.5
+        (360,   1,  1.3), # YouTube VP9: ~0.7/~1 Mbps → Upload H.264: 1/1.3
+    ]
+    pixel_height = min(width, height) if width < height else height  # Hochkant-Videos berücksichtigen
+    high_fps = fps > 32  # YouTube unterscheidet <=30fps vs. höher
+
+    # Exakten Tier finden oder linear zwischen zwei Tiers interpolieren
+    for i, (tier_h, br_low, br_high) in enumerate(yt_tiers):
+        if pixel_height >= tier_h:
+            br = br_high if high_fps else br_low
+            # Zwischen aktuellem und nächsthöherem Tier interpolieren
+            if i > 0:
+                upper_h, upper_br_low, upper_br_high = yt_tiers[i - 1]
+                upper_br = upper_br_high if high_fps else upper_br_low
+                if pixel_height < upper_h:
+                    ratio = (pixel_height - tier_h) / (upper_h - tier_h)
+                    br = br + ratio * (upper_br - br)
+            return int(round(br))
+
+    # Unterhalb 360p → Minimum
+    return 1
+
+
+def _build_video_encoder_args(quality='high', width=1920, height=1080, fps=30, no_bitrate_limit=False):
     """Gibt Video-Encoder-Argumente zurück (NVENC oder CPU, automatisch erkannt).
 
-    quality: 'high' (Concat/Final) oder 'medium' (Segment-Extraktion)
+    quality:          'high' (Concat/Final) oder 'medium' (Segment-Extraktion)
+    width:            Ziel-Breite in Pixel
+    height:           Ziel-Höhe in Pixel
+    fps:              Ziel-Framerate
+    no_bitrate_limit: True → kein maxrate/bufsize (ignoriert YouTube-Empfehlungen)
+
+    Bitrate-Limits werden dynamisch aus Auflösung und FPS berechnet,
+    sofern no_bitrate_limit nicht gesetzt ist.
     """
+    # Bitrate-Limit nur wenn gewünscht
+    bitrate_args = []
+    if not no_bitrate_limit:
+        maxrate = _get_youtube_maxrate(width, height, fps)
+        if quality != 'high':
+            maxrate = max(1, int(round(maxrate * 0.65)))
+        bufsize = maxrate * 2
+        bitrate_args = ['-maxrate', f'{maxrate}M', '-bufsize', f'{bufsize}M']
+
     encoder = detect_hw_encoder()
     if encoder == 'h264_nvenc':
         base = ['-c:v', 'h264_nvenc', '-rc', 'vbr', '-pix_fmt', 'yuv420p']
         if quality == 'high':
             return base + [
-                '-preset', 'p5',        # Qualitäts-Preset (p1=schnell … p7=langsam)
-                '-cq', '23',             # Constant Quality (≈ CRF 23)
+                '-preset', 'p5',
+                '-cq', '23',
                 '-b:v', '0',
+                *bitrate_args,
                 '-profile:v', 'high',
                 '-level', '5.1',
                 '-movflags', '+faststart',
             ]
-        else:  # medium – Segment-Extraktion
-            return base + ['-preset', 'p4', '-cq', '28', '-b:v', '15M']
+        else:
+            return base + [
+                '-preset', 'p4',
+                '-cq', '28',
+                '-b:v', '0',
+                *bitrate_args,
+            ]
     else:  # libx264 CPU-Fallback
         base = ['-c:v', 'libx264', '-pix_fmt', 'yuv420p']
         if quality == 'high':
             return base + [
                 '-crf', '23',
+                *bitrate_args,
                 '-profile:v', 'high',
                 '-level', '5.1',
                 '-preset', 'medium',
                 '-movflags', '+faststart',
             ]
         else:
-            return base + ['-crf', '28', '-b:v', '15M', '-preset', 'medium']
+            return base + [
+                '-crf', '28',
+                *bitrate_args,
+                '-preset', 'medium',
+            ]
 
 
 def _build_audio_encoder_args(quality='high'):
@@ -92,16 +169,21 @@ def _build_audio_encoder_args(quality='high'):
 
 
 def build_encode_cmd(*, input_args, output_file, video_filter=None,
-                     audio=True, quality='high', stream_copy=False):
+                     audio=True, quality='high', stream_copy=False,
+                     width=1920, height=1080, fps=30, no_bitrate_limit=False):
     """Zentrale Funktion zum Erstellen eines ffmpeg-Encode-Kommandos.
 
     Args:
-        input_args:   Liste von Input-Argumenten (z.B. ['-i', path])
-        output_file:  Pfad zur Ausgabedatei
-        video_filter: Optionaler -vf String (z.B. 'scale=3840:2160,fps=30')
-        audio:        True → encode, False → kein Audio, 'copy' → stream copy
-        quality:      'high' (Final) oder 'medium' (Zwischenschritt)
-        stream_copy:  True → kein Re-Encoding (kopiert Streams direkt)
+        input_args:       Liste von Input-Argumenten (z.B. ['-i', path])
+        output_file:      Pfad zur Ausgabedatei
+        video_filter:     Optionaler -vf String (z.B. 'scale=3840:2160,fps=30')
+        audio:            True → encode, False → kein Audio, 'copy' → stream copy
+        quality:          'high' (Final) oder 'medium' (Zwischenschritt)
+        stream_copy:      True → kein Re-Encoding (kopiert Streams direkt)
+        width:            Ziel-Breite in Pixel (für dynamische Bitrate-Berechnung)
+        height:           Ziel-Höhe in Pixel
+        fps:              Ziel-Framerate
+        no_bitrate_limit: True → kein maxrate/bufsize (ignoriert YouTube-Empfehlungen)
     """
     cmd = ['ffmpeg', '-y']
 
@@ -120,7 +202,7 @@ def build_encode_cmd(*, input_args, output_file, video_filter=None,
     else:
         if video_filter:
             cmd.extend(['-vf', video_filter])
-        cmd.extend(_build_video_encoder_args(quality=quality))
+        cmd.extend(_build_video_encoder_args(quality=quality, width=width, height=height, fps=fps, no_bitrate_limit=no_bitrate_limit))
         if audio is True:
             cmd.extend(_build_audio_encoder_args(quality=quality))
         elif audio == 'copy':
@@ -266,15 +348,20 @@ def analyze_video_resolutions(segments, input_dir, log_callback=None):
     return target_width, target_height, target_fps, needs_reencoding, source_codec, source_pix_fmt, source_fps_raw
 
 def extract_single_segment(args):
-    if len(args) == 12:
+    if len(args) == 13:
+        segment_info, segment_file, video_path, start_time, duration, target_width, target_height, target_fps, segment_audio, num_threads, youtube_opt, needs_reencoding, no_bitrate_limit = args
+    elif len(args) == 12:
         segment_info, segment_file, video_path, start_time, duration, target_width, target_height, target_fps, segment_audio, num_threads, youtube_opt, needs_reencoding = args
+        no_bitrate_limit = False
     elif len(args) == 11:
         segment_info, segment_file, video_path, start_time, duration, target_width, target_height, target_fps, segment_audio, num_threads, youtube_opt = args
         needs_reencoding = True
+        no_bitrate_limit = False
     else:
         segment_info, segment_file, video_path, start_time, duration, target_width, target_height, target_fps, segment_audio, num_threads = args
         youtube_opt = True
         needs_reencoding = True
+        no_bitrate_limit = False
     
     start = time.time()
     if is_video_file_complete(segment_file, expected_duration=duration):
@@ -292,6 +379,8 @@ def extract_single_segment(args):
                 input_args=input_args, output_file=segment_file,
                 stream_copy=True,
                 audio='copy' if segment_audio else False,
+                width=target_width, height=target_height, fps=target_fps,
+                no_bitrate_limit=no_bitrate_limit,
             )
         elif youtube_opt:
             # YouTube-Optimierung: Re-Encode Video + Audio
@@ -299,6 +388,8 @@ def extract_single_segment(args):
                 input_args=input_args, output_file=segment_file,
                 video_filter=vf, quality='medium',
                 audio=segment_audio,
+                width=target_width, height=target_height, fps=target_fps,
+                no_bitrate_limit=no_bitrate_limit,
             )
         else:
             # Kein YouTube: Re-Encode Video, Audio kopieren
@@ -306,6 +397,8 @@ def extract_single_segment(args):
                 input_args=input_args, output_file=segment_file,
                 video_filter=vf, quality='medium',
                 audio='copy' if segment_audio else False,
+                width=target_width, height=target_height, fps=target_fps,
+                no_bitrate_limit=no_bitrate_limit,
             )
         result = subprocess.run(extract_cmd, stdin=subprocess.DEVNULL, capture_output=True, check=True)
         processing_time = time.time() - start
@@ -320,7 +413,7 @@ def extract_single_segment(args):
 
         return (segment_file, processing_time, False, str(e), False)
 
-def assemble_ffmpeg_script(segments, input_dir, output_file, use_audio=True, target_width=1920, target_height=1080, target_fps=25, max_workers=None, debug_cache=False, youtube_opt=True, needs_reencoding=True, logo_path='input/teamlogo.png', log_callback=None, source_codec=None, source_pix_fmt=None, source_fps_raw=None):
+def assemble_ffmpeg_script(segments, input_dir, output_file, use_audio=True, target_width=1920, target_height=1080, target_fps=25, max_workers=None, debug_cache=False, youtube_opt=True, needs_reencoding=True, logo_path='input/teamlogo.png', log_callback=None, source_codec=None, source_pix_fmt=None, source_fps_raw=None, no_bitrate_limit=False):
     def log(msg):
         if log_callback:
             log_callback(msg)
@@ -458,7 +551,8 @@ def assemble_ffmpeg_script(segments, input_dir, output_file, use_audio=True, tar
     extract_args = [
         (job, job['segment_file'], job['video_path'], job['start_time'],
          job['duration'], target_width, target_height, target_fps,
-         job['segment_audio'], threads_per_process, youtube_opt, needs_reencoding)
+         job['segment_audio'], threads_per_process, youtube_opt, needs_reencoding,
+         no_bitrate_limit)
         for job in segment_jobs
     ]
     completed_segments = 0
@@ -534,11 +628,15 @@ def assemble_ffmpeg_script(segments, input_dir, output_file, use_audio=True, tar
         concat_cmd = build_encode_cmd(
             input_args=concat_input, output_file=output_file,
             audio=True, quality='high',
+            width=target_width, height=target_height, fps=target_fps,
+            no_bitrate_limit=no_bitrate_limit,
         )
     else:
         concat_cmd = build_encode_cmd(
             input_args=concat_input, output_file=output_file,
             stream_copy=True, audio='copy',
+            width=target_width, height=target_height, fps=target_fps,
+            no_bitrate_limit=no_bitrate_limit,
         )
     log("Kombiniere Segmente mit Übergängen...")
     log(f"  CMD: {' '.join(str(c) for c in concat_cmd)}")
