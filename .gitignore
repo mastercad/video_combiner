@@ -45,5 +45,6 @@ segments*.csv
 
 output/
 input/
+config/
 
 settings.json

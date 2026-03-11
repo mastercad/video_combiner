@@ -3,6 +3,10 @@
 
 Ein Werkzeug für Fußballvereine, das automatisch Spielszenen aus Videoaufnahmen zur Spielanalyse herausschneidet, mit Titeln versieht, zu einem Gesamtvideo zusammenfügt und optional direkt auf YouTube hochlädt – alles mit wenigen Klicks über eine grafische Oberfläche.
 
+<p align="center">
+  <img src="assets/application_main.png" alt="E-Stim 2B Sound Generator — Hauptbildschirm" width="600">
+</p>
+
 ---
 
 ## Inhaltsverzeichnis

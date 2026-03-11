@@ -219,8 +219,14 @@ class VideoSegmentGUI(QMainWindow):
 
     def _build_action_buttons(self):
         row = QHBoxLayout()
-        save_btn = QPushButton("CSV speichern")
-        save_btn.clicked.connect(self._save_csv)
+        load_btn = QPushButton("Schnittliste laden")
+        load_btn.setToolTip("Schnittliste aus einer CSV-Datei laden")
+        load_btn.clicked.connect(self._load_csv_dialog)
+        row.addWidget(load_btn)
+
+        save_btn = QPushButton("Schnittliste speichern")
+        save_btn.setToolTip("Schnittliste in eine CSV-Datei speichern")
+        save_btn.clicked.connect(self._save_csv_dialog)
         row.addWidget(save_btn)
 
         opts_btn = QPushButton("Erweiterte Optionen")
@@ -277,6 +283,10 @@ class VideoSegmentGUI(QMainWindow):
         rm_btn.setToolTip("Entfernt das markierte Segment")
         rm_btn.clicked.connect(self._remove_segment)
         btns.addWidget(rm_btn)
+        clear_btn = QPushButton("Liste leeren")
+        clear_btn.setToolTip("Alle Segmente aus der Liste entfernen")
+        clear_btn.clicked.connect(self._clear_segments)
+        btns.addWidget(clear_btn)
         lay.addLayout(btns)
 
         # Gesamtdauer-Anzeige
@@ -387,13 +397,33 @@ class VideoSegmentGUI(QMainWindow):
                 paths.append(vp)
         return paths
 
-    def _load_segments(self):
-        if not Path(self.csv_file).exists():
+    @staticmethod
+    def _parse_float(val, default=0.0):
+        """Wandelt einen String in float um; toleriert Komma als Dezimaltrennzeichen."""
+        try:
+            s = str(val).strip().replace(",", ".")
+            return float(s) if s else default
+        except (ValueError, TypeError):
+            return default
+
+    @staticmethod
+    def _parse_int(val, default=0):
+        """Wandelt einen String in int um; toleriert leere Werte."""
+        try:
+            s = str(val).strip()
+            return int(s) if s else default
+        except (ValueError, TypeError):
+            return default
+
+    def _load_segments(self, path=None):
+        csv_path = path or self.csv_file
+        if not Path(csv_path).exists():
             return
         self.segments = []
+        warnings = []
         try:
-            with open(self.csv_file, "r", newline="", encoding="utf-8") as f:
-                for row in csv.DictReader(f):
+            with open(csv_path, "r", newline="", encoding="utf-8") as f:
+                for lineno, row in enumerate(csv.DictReader(f), start=2):
                     vp = row.get("videoname", "")
                     if (
                         vp
@@ -402,21 +432,68 @@ class VideoSegmentGUI(QMainWindow):
                     ):
                         if vp not in self.external_videos:
                             self.external_videos.append(vp)
+
+                    raw_start = row.get("start_minute", "")
+                    raw_len   = row.get("length_seconds", "")
+                    raw_audio = row.get("audio", "")
+
+                    start_min = self._parse_float(raw_start)
+                    length_s  = self._parse_int(raw_len)
+                    audio     = self._parse_int(raw_audio, default=1)
+
+                    # Warnungen bei korrigierten Werten sammeln
+                    if str(raw_start).strip().replace(",", ".") != str(raw_start).strip():
+                        warnings.append(f"Zeile {lineno}: start_minute '{raw_start}' – Komma als Dezimaltrennzeichen korrigiert.")
+                    if str(raw_len).strip() == "":
+                        warnings.append(f"Zeile {lineno}: length_seconds leer – 0 verwendet.")
+                    if str(raw_audio).strip() == "":
+                        warnings.append(f"Zeile {lineno}: audio leer – 1 verwendet.")
+
                     self.segments.append({
                         "videoname": vp,
-                        "start_minute": float(row.get("start_minute", 0)),
-                        "length_seconds": int(row.get("length_seconds", 0)),
+                        "start_minute": start_min,
+                        "length_seconds": length_s,
                         "title": row.get("title", ""),
                         "sub_title": row.get("sub_title", ""),
-                        "audio": int(row.get("audio", 1)),
+                        "audio": audio,
                     })
+            self._csv_dirty = False
         except Exception as e:
-            QMessageBox.warning(self, "Fehler", f"CSV laden: {e}")
+            QMessageBox.warning(self, "Fehler", f"CSV laden fehlgeschlagen: {e}")
+        if warnings:
+            QMessageBox.warning(
+                self, "CSV-Warnungen beim Laden",
+                "Folgende Werte wurden automatisch korrigiert:\n\n" + "\n".join(warnings)
+            )
         self._update_table()
 
-    def _save_csv(self, silent=False):
+    def _load_csv_dialog(self):
+        """Öffnet einen Dateidialog zum Laden einer Schnittliste."""
+        if self._csv_dirty:
+            reply = QMessageBox.question(
+                self, "Ungespeicherte Änderungen",
+                "Die aktuelle Schnittliste hat ungespeicherte Änderungen.\nTrotzdem laden?",
+                QMessageBox.Yes | QMessageBox.No,
+                QMessageBox.No,
+            )
+            if reply != QMessageBox.Yes:
+                return
+        path, _ = QFileDialog.getOpenFileName(
+            self, "Schnittliste laden",
+            str(Path(self.csv_file).parent),
+            "CSV-Dateien (*.csv);;Alle Dateien (*)",
+        )
+        if path:
+            self.csv_file = path
+            self._load_segments(path)
+            self._load_videos()
+            self.setWindowTitle(f"KADERBLICK – {Path(path).name}")
+
+    def _save_csv(self, path=None, silent=False):
+        """Speichert die Schnittliste in die angegebene (oder aktuelle) Datei."""
+        csv_path = path or self.csv_file
         try:
-            with open(self.csv_file, "w", newline="", encoding="utf-8") as f:
+            with open(csv_path, "w", newline="", encoding="utf-8") as f:
                 w = csv.DictWriter(
                     f,
                     fieldnames=[
@@ -429,10 +506,25 @@ class VideoSegmentGUI(QMainWindow):
             self._csv_dirty = False
             if not silent:
                 QMessageBox.information(
-                    self, "Erfolg", f"Gespeichert: {self.csv_file}"
+                    self, "Erfolg", f"Gespeichert: {csv_path}"
                 )
         except Exception as e:
             QMessageBox.warning(self, "Fehler", f"CSV speichern: {e}")
+
+    def _save_csv_dialog(self):
+        """Öffnet einen Dateidialog zum Speichern der Schnittliste."""
+        path, _ = QFileDialog.getSaveFileName(
+            self, "Schnittliste speichern",
+            str(Path(self.csv_file).parent / Path(self.csv_file).name),
+            "CSV-Dateien (*.csv);;Alle Dateien (*)",
+        )
+        if path:
+            # .csv-Endung sicherstellen, wenn keine Endung angegeben
+            if not Path(path).suffix:
+                path += ".csv"
+            self.csv_file = path
+            self._save_csv(path)
+            self.setWindowTitle(f"KADERBLICK – {Path(path).name}")
 
     # ── Tabelle ──────────────────────────────────────────────────────────────
 
@@ -589,6 +681,19 @@ class VideoSegmentGUI(QMainWindow):
         )
         if reply == QMessageBox.Yes:
             self.segments.pop(row)
+            self._csv_dirty = True
+            self._update_table()
+
+    def _clear_segments(self):
+        if not self.segments:
+            return
+        reply = QMessageBox.question(
+            self, "Bestätigung",
+            f"Alle {len(self.segments)} Segment(e) wirklich entfernen?",
+            QMessageBox.Yes | QMessageBox.No,
+        )
+        if reply == QMessageBox.Yes:
+            self.segments.clear()
             self._csv_dirty = True
             self._update_table()
 
