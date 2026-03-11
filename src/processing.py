@@ -262,7 +262,7 @@ def _kill_descendant_ffmpeg():
     except Exception:
         pass
 
-def analyze_video_resolutions(segments, input_dir, log_callback=None):
+def analyze_video_resolutions(segments, input_dir, log_callback=None, progress_callback=None):
     def log(msg):
         if log_callback:
             log_callback(msg)
@@ -270,6 +270,8 @@ def analyze_video_resolutions(segments, input_dir, log_callback=None):
             print(msg)
 
     log("\n=== Analysiere Video-Auflösungen ===")
+    if progress_callback:
+        progress_callback(0, len(segments), f"Analysiere Auflösungen: {len(segments)} Video(s) …")
     resolutions = []
     fps_values = []
     fps_raw_values = []
@@ -278,6 +280,9 @@ def analyze_video_resolutions(segments, input_dir, log_callback=None):
 
     for idx, seg in enumerate(segments, 1):
         video_path = Path(input_dir) / seg['videoname']
+        if progress_callback:
+            progress_callback(idx - 1, len(segments),
+                              f"Analysiere Video {idx}/{len(segments)}: {seg['videoname']}")
         log(f"  Analysiere [{idx}/{len(segments)}]: {seg['videoname']}")
         if not video_path.exists():
             log(f"  ⚠️  {video_path} existiert nicht!")
@@ -413,12 +418,20 @@ def extract_single_segment(args):
 
         return (segment_file, processing_time, False, str(e), False)
 
-def assemble_ffmpeg_script(segments, input_dir, output_file, use_audio=True, target_width=1920, target_height=1080, target_fps=25, max_workers=None, debug_cache=False, youtube_opt=True, needs_reencoding=True, logo_path='input/teamlogo.png', log_callback=None, source_codec=None, source_pix_fmt=None, source_fps_raw=None, no_bitrate_limit=False, merge_videos=True, chapter_transitions=True):
+def assemble_ffmpeg_script(segments, input_dir, output_file, use_audio=True, target_width=1920, target_height=1080, target_fps=25, max_workers=None, debug_cache=False, youtube_opt=True, needs_reencoding=True, logo_path='input/teamlogo.png', log_callback=None, source_codec=None, source_pix_fmt=None, source_fps_raw=None, no_bitrate_limit=False, merge_videos=True, chapter_transitions=True, progress_callback=None, segment_status_callback=None):
     def log(msg):
         if log_callback:
             log_callback(msg)
         else:
             print(msg)
+
+    def progress(current, total, label):
+        if progress_callback:
+            progress_callback(current, total, label)
+
+    def seg_status(row, text, kind):
+        if segment_status_callback:
+            segment_status_callback(row, text, kind)
 
     # Bestimme Anzahl der parallelen Worker (Standard: CPU-Kerne - 2, mindestens 1)
     if max_workers is None:
@@ -468,6 +481,7 @@ def assemble_ffmpeg_script(segments, input_dir, output_file, use_audio=True, tar
             game_info[gdate] = {'per_video_titles': False, 'game_title': None}
     total_segments = len(segments)
     start_time_overall = time.time()
+    progress(0, total_segments, f"Phase 1: Vorbereitung – {total_segments} Segment(e) …")
     log(f"\n📋 Phase 1: Bereite Metadaten für {total_segments} Segmente vor...")
     segment_jobs = []
     segment_metadata = []
@@ -547,7 +561,12 @@ def assemble_ffmpeg_script(segments, input_dir, output_file, use_audio=True, tar
         })
         current_time += duration
         segment_number_in_game += 1
+    progress(0, len(segment_jobs), f"Phase 2: Extrahiere {len(segment_jobs)} Segment(e) …")
     log(f"\n🚀 Phase 2: Extrahiere {len(segment_jobs)} Segmente parallel (Worker: {max_workers})...")
+
+    # Alle Segmente initial als „Ausstehend“ markieren
+    for job in segment_jobs:
+        seg_status(job['index'], '⏳ Ausstehend', 'pending')
     if existing_segments_count > 0:
         log(f"  📦 {existing_segments_count} Segment(e) bereits vorhanden (werden wiederverwendet)")
         log(f"  ⚡ {len(segment_jobs) - existing_segments_count} Segment(e) müssen erstellt werden")
@@ -577,8 +596,17 @@ def assemble_ffmpeg_script(segments, input_dir, output_file, use_audio=True, tar
                         completed_segments += 1
                         if was_cached:
                             cached_segments += 1
+                            seg_status(job['index'], '📦 Cache', 'cached')
+                        else:
+                            seg_status(job['index'], f'✓ {processing_time:.1f} s', 'done')
                         cache_tag = " [Cache]" if was_cached else ""
                         log(f"  ✓ Segment {job['segment_number']:02d}: {Path(job['videoname']).name} @ {job['start_minute']}min ({processing_time:.1f}s){cache_tag}  [{completed_segments}/{len(segment_jobs)}]")
+                        start_min = job['start_minute']
+                        start_mm = int(start_min)
+                        start_ss = int((start_min - start_mm) * 60)
+                        progress(completed_segments, len(segment_jobs),
+                                 f"Segment {completed_segments}/{len(segment_jobs)}: "
+                                 f"{Path(job['videoname']).name}  @  {start_mm:02d}:{start_ss:02d} min")
                         if segment_times:
                             avg_time = sum(segment_times) / len(segment_times)
                             remaining = len(segment_jobs) - completed_segments
@@ -592,9 +620,11 @@ def assemble_ffmpeg_script(segments, input_dir, output_file, use_audio=True, tar
                             pbar.set_postfix({'Restzeit': time_str, 'Ø': f"{avg_time:.1f}s", 'Cache': cached_segments})
                     else:
                         failed_segments.append((job, error_msg))
+                        seg_status(job['index'], '❌ Fehler', 'error')
                         log(f"\n❌ Fehler bei Segment {job['segment_number']}: {error_msg}")
                 except Exception as e:
                     failed_segments.append((job, str(e)))
+                    seg_status(job['index'], '❌ Fehler', 'error')
                     log(f"\n❌ Exception bei Segment {job['segment_number']}: {e}")
                 pbar.update(1)
     if failed_segments:
@@ -621,6 +651,7 @@ def assemble_ffmpeg_script(segments, input_dir, output_file, use_audio=True, tar
         log(f"⏱️  Gesamte Verarbeitungszeit: {total_time_str}")
         log(f"{'='*60}\n")
         return
+    progress(len(segment_jobs), len(segment_jobs), "Phase 3: Segmente zusammenfügen …")
     log(f"\n🎬 Phase 3: Füge Dateien in korrekter Reihenfolge zusammen...")
     all_files = []
     for i, meta in enumerate(segment_metadata):

@@ -12,6 +12,7 @@ Zuständigkeiten:
 import csv
 import json
 import os
+import time
 from pathlib import Path
 
 from PyQt5.QtWidgets import (
@@ -19,10 +20,10 @@ from PyQt5.QtWidgets import (
     QLabel, QPushButton, QTableWidget, QTableWidgetItem, QComboBox,
     QLineEdit, QSpinBox, QTimeEdit, QCheckBox, QFileDialog, QMessageBox,
     QHeaderView, QSplitter, QGroupBox, QFormLayout,
-    QDialog, QTextEdit,
+    QDialog, QTextEdit, QProgressBar,
 )
 from PyQt5.QtCore import Qt, QTime, QTimer
-from PyQt5.QtGui import QFont, QIcon, QPixmap
+from PyQt5.QtGui import QFont, QIcon, QPixmap, QColor
 
 from src.gui.dialogs import TimeRangeDialog, YouTubeOptionsDialog
 from src.gui.worker import PipelineWorker
@@ -38,6 +39,7 @@ class VideoSegmentGUI(QMainWindow):
         self.csv_file = "segments.csv"
         self.config_file = "config/settings.json"
         self.pipeline_worker = None
+        self._pipeline_start_time = None
 
         self.options = {
             "no_audio": False,
@@ -69,12 +71,17 @@ class VideoSegmentGUI(QMainWindow):
                         v for v in cfg.get("external_videos", []) if Path(v).exists()
                     ]
                     self.options.update(cfg.get("options", {}))
+                    # Zuletzt geöffnete Schnittliste wiederherstellen
+                    saved_csv = cfg.get("csv_file", "")
+                    if saved_csv and Path(saved_csv).exists():
+                        self.csv_file = saved_csv
         except Exception as e:
             print(f"Warnung: Konnte GUI-Konfiguration nicht laden: {e}")
 
     def _save_config(self):
         try:
             cfg = {
+                "csv_file": self.csv_file,
                 "external_videos": self.external_videos,
                 "options": self.options,
             }
@@ -84,6 +91,9 @@ class VideoSegmentGUI(QMainWindow):
             print(f"Warnung: Konnte GUI-Konfiguration nicht speichern: {e}")
 
     def closeEvent(self, event):
+        # Ungespeicherte Änderungen automatisch sichern
+        if self._csv_dirty:
+            self._save_csv(silent=True)
         self._save_config()
         # Laufende ffmpeg-Prozesse sauber beenden
         if hasattr(self, 'pipeline_worker') and self.pipeline_worker and self.pipeline_worker.isRunning():
@@ -113,6 +123,11 @@ class VideoSegmentGUI(QMainWindow):
         splitter.addWidget(self._build_left_panel())
         splitter.addWidget(self._build_right_panel())
         splitter.setSizes([400, 800])
+
+        # Laufzeit-Timer (1 s Takt) – startet nur während der Pipeline
+        self._elapsed_timer = QTimer(self)
+        self._elapsed_timer.setInterval(1000)
+        self._elapsed_timer.timeout.connect(self._update_elapsed)
 
     # ── Linkes Panel ─────────────────────────────────────────────────────────
 
@@ -218,25 +233,49 @@ class VideoSegmentGUI(QMainWindow):
         return grp
 
     def _build_action_buttons(self):
-        row = QHBoxLayout()
+        layout = QVBoxLayout()
+
+        # Obere Zeile: Hilfsfunktionen
+        util_row = QHBoxLayout()
         load_btn = QPushButton("Schnittliste laden")
         load_btn.setToolTip("Schnittliste aus einer CSV-Datei laden")
         load_btn.clicked.connect(self._load_csv_dialog)
-        row.addWidget(load_btn)
+        util_row.addWidget(load_btn)
 
         save_btn = QPushButton("Schnittliste speichern")
         save_btn.setToolTip("Schnittliste in eine CSV-Datei speichern")
         save_btn.clicked.connect(self._save_csv_dialog)
-        row.addWidget(save_btn)
+        util_row.addWidget(save_btn)
 
         opts_btn = QPushButton("Erweiterte Optionen")
         opts_btn.clicked.connect(self._show_advanced_options)
-        row.addWidget(opts_btn)
+        util_row.addWidget(opts_btn)
+        layout.addLayout(util_row)
 
-        self.run_btn = QPushButton("Video erstellen")
+        # Untere Zeile: Haupt-Aktion – groß und auffällig
+        self.run_btn = QPushButton("▶  Video erstellen")
+        self.run_btn.setMinimumHeight(52)
+        self.run_btn.setFont(QFont(self.font().family(), 13, QFont.Bold))
+        self.run_btn.setStyleSheet(
+            "QPushButton {"
+            "  background: qlineargradient(x1:0, y1:0, x2:0, y2:1,"
+            "    stop:0 #27ae60, stop:1 #1e8449);"
+            "  color: white;"
+            "  border: none; border-radius: 6px;"
+            "  padding: 8px 16px;"
+            "}"
+            "QPushButton:hover {"
+            "  background: qlineargradient(x1:0, y1:0, x2:0, y2:1,"
+            "    stop:0 #2ecc71, stop:1 #27ae60);"
+            "}"
+            "QPushButton:pressed { background: #1a7a3c; }"
+            "QPushButton:disabled {"
+            "  background: #b0b0b0; color: #e8e8e8;"
+            "}"
+        )
         self.run_btn.clicked.connect(self._run_pipeline)
-        row.addWidget(self.run_btn)
-        return row
+        layout.addWidget(self.run_btn)
+        return layout
 
     # ── Rechtes Panel ────────────────────────────────────────────────────────
 
@@ -252,9 +291,9 @@ class VideoSegmentGUI(QMainWindow):
         lay = QVBoxLayout(grp)
 
         self.segments_table = QTableWidget()
-        self.segments_table.setColumnCount(6)
+        self.segments_table.setColumnCount(7)
         self.segments_table.setHorizontalHeaderLabels(
-            ["Video", "Start (min)", "Dauer (s)", "Titel", "Untertitel", "Audio"]
+            ["Video", "Start (min)", "Dauer (s)", "Titel", "Untertitel", "Audio", "Status"]
         )
         header = self.segments_table.horizontalHeader()
         # Alle Spalten manuell verstellbar
@@ -262,6 +301,9 @@ class VideoSegmentGUI(QMainWindow):
         # Titel und Untertitel dehnen sich aus, um den Restplatz zu füllen
         header.setSectionResizeMode(3, QHeaderView.Stretch)
         header.setSectionResizeMode(4, QHeaderView.Stretch)
+        # Status-Spalte: feste Breite
+        header.setSectionResizeMode(6, QHeaderView.Fixed)
+        self.segments_table.setColumnWidth(6, 110)
         self.segments_table.setSelectionBehavior(QTableWidget.SelectRows)
         self.segments_table.cellChanged.connect(self._on_cell_changed)
         lay.addWidget(self.segments_table)
@@ -297,8 +339,45 @@ class VideoSegmentGUI(QMainWindow):
         return grp
 
     def _build_log_group(self):
-        grp = QGroupBox("Log")
+        grp = QGroupBox("Pipeline-Status & Log")
         lay = QVBoxLayout(grp)
+
+        # ── Statuszeile (Phase-Label + Laufzeit) ──────────────────────────
+        status_row = QHBoxLayout()
+        self.status_phase_label = QLabel("Bereit")
+        self.status_phase_label.setStyleSheet(
+            "font-weight: bold; color: #555; padding: 2px 0;"
+        )
+        status_row.addWidget(self.status_phase_label, 1)
+        self.elapsed_label = QLabel("")
+        self.elapsed_label.setStyleSheet(
+            "color: #777; font-size: 10px; padding: 2px 6px;"
+        )
+        self.elapsed_label.setAlignment(Qt.AlignRight | Qt.AlignVCenter)
+        status_row.addWidget(self.elapsed_label)
+        lay.addLayout(status_row)
+
+        # ── Fortschrittsbalken ─────────────────────────────────────
+        self.progress_bar = QProgressBar()
+        self.progress_bar.setRange(0, 1)
+        self.progress_bar.setValue(0)
+        self.progress_bar.setTextVisible(True)
+        self.progress_bar.setFormat("Bereit")
+        self.progress_bar.setFixedHeight(22)
+        self.progress_bar.setStyleSheet(
+            "QProgressBar {"
+            "  border: 1px solid #bbb; border-radius: 4px;"
+            "  background: #f0f0f0; text-align: center; font-size: 10px; "
+            "}"
+            "QProgressBar::chunk {"
+            "  background: qlineargradient(x1:0, y1:0, x2:1, y2:0,"
+            "    stop:0 #2980b9, stop:1 #6dd5fa);"
+            "  border-radius: 3px;"
+            "}"
+        )
+        lay.addWidget(self.progress_bar)
+
+        # ── Log-Ausgabe ────────────────────────────────────────
         self.log_text = QTextEdit()
         self.log_text.setReadOnly(True)
         self.log_text.setMinimumHeight(200)
@@ -466,6 +545,8 @@ class VideoSegmentGUI(QMainWindow):
                 "Folgende Werte wurden automatisch korrigiert:\n\n" + "\n".join(warnings)
             )
         self._update_table()
+        # Fenstertitel mit aktuellem Dateinamen aktualisieren
+        self.setWindowTitle(f"KADERBLICK – {Path(csv_path).name}")
 
     def _load_csv_dialog(self):
         """Öffnet einen Dateidialog zum Laden einer Schnittliste."""
@@ -557,6 +638,11 @@ class VideoSegmentGUI(QMainWindow):
             audio_item = _ro_item("Ja" if seg["audio"] else "Nein")
             audio_item.setTextAlignment(Qt.AlignRight | Qt.AlignVCenter)
             self.segments_table.setItem(r, 5, audio_item)
+
+            # Status-Spalte: initial leer
+            status_item = _ro_item("")
+            status_item.setTextAlignment(Qt.AlignCenter | Qt.AlignVCenter)
+            self.segments_table.setItem(r, 6, status_item)
         self.segments_table.blockSignals(False)
         self._resize_columns_to_content()
         self._update_total_duration()
@@ -565,6 +651,8 @@ class VideoSegmentGUI(QMainWindow):
         """Passt Spaltenbreite an Inhalt an (außer Stretch-Spalten Titel/Untertitel)."""
         for col in (0, 1, 2, 5):  # Video, Start, Dauer, Audio
             self.segments_table.resizeColumnToContents(col)
+        # Status-Spalte: Breite konstant halten
+        self.segments_table.setColumnWidth(6, 110)
 
     def _update_total_duration(self):
         """Aktualisiert die Gesamtdauer-Anzeige (Segmente + je 1s Textclip)."""
@@ -750,33 +838,214 @@ class VideoSegmentGUI(QMainWindow):
         }
 
         self.log_text.clear()
-        self.run_btn.setText("⛔ Abbrechen")
+
+        # Fortschritts-UI zurücksetzen
+        n = len(self.segments)
+        self.progress_bar.setMaximum(max(n, 1))
+        self.progress_bar.setValue(0)
+        self.progress_bar.setFormat("Starte …")
+        self.status_phase_label.setText("Pipeline wird gestartet …")
+        self.status_phase_label.setStyleSheet(
+            "font-weight: bold; color: #1a6fa8; padding: 2px 0;"
+        )
+        self.elapsed_label.setText("⏱  0 s")
+        self._pipeline_start_time = time.monotonic()
+        self._elapsed_timer.start()
+
+        # Alle Tabellenzeilen zurücksetzen
+        self._reset_table_status()
+
+        self.run_btn.setText("⛔  Abbrechen")
+        self.run_btn.setStyleSheet(
+            "QPushButton {"
+            "  background: qlineargradient(x1:0, y1:0, x2:0, y2:1,"
+            "    stop:0 #e74c3c, stop:1 #c0392b);"
+            "  color: white;"
+            "  border: none; border-radius: 6px;"
+            "  padding: 8px 16px;"
+            "}"
+            "QPushButton:hover {"
+            "  background: qlineargradient(x1:0, y1:0, x2:0, y2:1,"
+            "    stop:0 #f15a4a, stop:1 #e74c3c);"
+            "}"
+            "QPushButton:pressed { background: #a93226; }"
+            "QPushButton:disabled {"
+            "  background: #b0b0b0; color: #e8e8e8;"
+            "}"
+        )
         self.run_btn.clicked.disconnect()
         self.run_btn.clicked.connect(self._cancel_pipeline)
 
         self.pipeline_worker = PipelineWorker(list(self.segments), pipeline_opts)
         self.pipeline_worker.log_signal.connect(self._on_log)
+        self.pipeline_worker.progress_signal.connect(self._on_progress)
+        self.pipeline_worker.segment_status_signal.connect(self._on_segment_status)
         self.pipeline_worker.finished_signal.connect(self._on_pipeline_done)
         self.pipeline_worker.start()
 
+    # ── Log & Fortschritt ───────────────────────────────────────────
+
+    # Färbung der Status-Spalte
+    _STATUS_COLORS = {
+        'pending':  (QColor('#e8e8e8'), QColor('#555555')),   # grau
+        'done':     (QColor('#d4edda'), QColor('#155724')),   # grün
+        'cached':   (QColor('#e8d5f5'), QColor('#5b2c6f')),   # violett
+        'error':    (QColor('#f8d7da'), QColor('#721c24')),   # rot
+    }
+
+    def _reset_table_status(self):
+        """Setzt die Status-Spalte aller Zeilen auf einen leeren Zustand."""
+        for row in range(self.segments_table.rowCount()):
+            item = self.segments_table.item(row, 6)
+            if item is None:
+                item = QTableWidgetItem()
+                item.setFlags(item.flags() & ~Qt.ItemIsEditable)
+                item.setTextAlignment(Qt.AlignCenter | Qt.AlignVCenter)
+                self.segments_table.setItem(row, 6, item)
+            item.setText("")
+            item.setBackground(QColor('#ffffff'))
+            item.setForeground(QColor('#000000'))
+
+    def _on_segment_status(self, row: int, text: str, kind: str):
+        """Aktualisiert die Status-Spalte für eine einzelne Tabellenzeile."""
+        if row < 0 or row >= self.segments_table.rowCount():
+            return
+        item = self.segments_table.item(row, 6)
+        if item is None:
+            item = QTableWidgetItem()
+            item.setFlags(item.flags() & ~Qt.ItemIsEditable)
+            item.setTextAlignment(Qt.AlignCenter | Qt.AlignVCenter)
+            self.segments_table.setItem(row, 6, item)
+        item.setText(text)
+        bg, fg = self._STATUS_COLORS.get(kind, (QColor('#ffffff'), QColor('#000000')))
+        item.setBackground(bg)
+        item.setForeground(fg)
+        # Aktive Zeile hervorheben
+        if kind == 'pending':
+            font = item.font()
+            font.setBold(False)
+            item.setFont(font)
+        else:
+            font = item.font()
+            font.setBold(True)
+            item.setFont(font)
+
+    @staticmethod
+    def _format_log_html(msg: str) -> str:
+        """Wandelt eine Log-Zeile in gefärbtes HTML um."""
+        from html import escape
+        safe = escape(msg)
+        # Phasenkopfzeilen  ===
+        if '===' in safe:
+            return f'<b><span style="color:#1a6fa8;">{safe}</span></b>'
+        # Harter Fehler
+        if any(x in msg for x in ('\u274c', 'Fehler', 'Error', 'fehlgeschlagen', 'Exception')):
+            return f'<span style="color:#c0392b;">{safe}</span>'
+        # Warnung / Überspringen
+        if any(x in msg for x in ('\u26a0', 'Warnung', 'Warning', 'Überspringe', 'Überspringe')):
+            return f'<span style="color:#e67e22;">{safe}</span>'
+        # Abbruch
+        if '\u26d4' in msg or 'Abbruch' in msg:
+            return f'<b><span style="color:#c0392b;">{safe}</span></b>'
+        # Gesamt-Erfolg
+        if 'FERTIG' in safe or '\u2705' in msg:
+            return f'<b><span style="color:#27ae60;">{safe}</span></b>'
+        # Einzel-Erfolg ✓
+        if safe.strip().startswith('\u2713'):
+            return f'<span style="color:#27ae60;">{safe}</span>'
+        # Phase-Ankuendigung
+        if any(x in msg for x in ('\U0001f680', '\U0001f4cb', '\U0001f3ac', '\U0001f50c')):
+            return f'<b>{safe}</b>'
+        # Cache / GPU / HW
+        if any(x in msg for x in ('\U0001f4e6', '\u26a1', '\U0001f3ae', '\U0001f5a5')):
+            return f'<span style="color:#7d3c98;">{safe}</span>'
+        return safe
+
     def _on_log(self, msg):
-        self.log_text.append(msg)
-        # Auto-Scroll ans Ende
+        self.log_text.append(self._format_log_html(msg))
         sb = self.log_text.verticalScrollBar()
         sb.setValue(sb.maximum())
 
+    def _on_progress(self, current: int, total: int, label: str):
+        """Aktualisiert Fortschrittsbalken und Statuszeile."""
+        if total > 0:
+            self.progress_bar.setMaximum(total)
+            self.progress_bar.setValue(current)
+            self.progress_bar.setFormat(f"{current} / {total}")
+        self.status_phase_label.setText(label)
+        self.status_phase_label.setStyleSheet(
+            "font-weight: bold; color: #1a6fa8; padding: 2px 0;"
+        )
+
+    def _update_elapsed(self):
+        """Tick-Handler: aktualisiert die Laufzeitanzeige jede Sekunde."""
+        if self._pipeline_start_time is None:
+            return
+        elapsed = time.monotonic() - self._pipeline_start_time
+        if elapsed < 60:
+            self.elapsed_label.setText(f"⏱  {elapsed:.0f} s")
+        elif elapsed < 3600:
+            self.elapsed_label.setText(f"⏱  {elapsed / 60:.1f} min")
+        else:
+            h = int(elapsed // 3600)
+            m = int((elapsed % 3600) // 60)
+            self.elapsed_label.setText(f"⏱  {h}h {m:02d} min")
+
     def _cancel_pipeline(self):
-        """Bricht die laufende Pipeline ab."""
+        """Bricht die laufende Pipeline ab – non-blocking."""
+        # Sofortiges visuelles Feedback – Button bleibt klickbar, aber zeigt Status
+        self.run_btn.setText("⏳  Abbrechen läuft…")
         self.run_btn.setEnabled(False)
+        self.status_phase_label.setText("⚠️  Abbruch angefordert – Prozesse werden beendet…")
+        self.status_phase_label.setStyleSheet(
+            "font-weight: bold; color: #e67e22; padding: 2px 0;"
+        )
         self._on_log("⚠️  Abbruch angefordert – ffmpeg-Prozesse werden beendet...")
+        # cancel_pipeline() kann blockieren (bis zu 5 s) – daher im Daemon-Thread
+        import threading
         from src.processing import cancel_pipeline
-        cancel_pipeline()
+        threading.Thread(target=cancel_pipeline, daemon=True).start()
 
     def _on_pipeline_done(self, result):
+        self._elapsed_timer.stop()
+        elapsed_text = self.elapsed_label.text().strip()
+        self._pipeline_start_time = None
+
         self.run_btn.clicked.disconnect()
         self.run_btn.clicked.connect(self._run_pipeline)
         self.run_btn.setEnabled(True)
-        self.run_btn.setText("Video erstellen")
+        self.run_btn.setText("▶  Video erstellen")
+        self.run_btn.setStyleSheet(
+            "QPushButton {"
+            "  background: qlineargradient(x1:0, y1:0, x2:0, y2:1,"
+            "    stop:0 #27ae60, stop:1 #1e8449);"
+            "  color: white;"
+            "  border: none; border-radius: 6px;"
+            "  padding: 8px 16px;"
+            "}"
+            "QPushButton:hover {"
+            "  background: qlineargradient(x1:0, y1:0, x2:0, y2:1,"
+            "    stop:0 #2ecc71, stop:1 #27ae60);"
+            "}"
+            "QPushButton:pressed { background: #1a7a3c; }"
+            "QPushButton:disabled {"
+            "  background: #b0b0b0; color: #e8e8e8;"
+            "}"
+        )
+
+        if result["success"]:
+            self.progress_bar.setValue(self.progress_bar.maximum())
+            self.progress_bar.setFormat("✓ Fertig!")
+            self.status_phase_label.setText(f"✅ Fertig!  –  {elapsed_text}")
+            self.status_phase_label.setStyleSheet(
+                "font-weight: bold; color: #27ae60; padding: 2px 0;"
+            )
+        else:
+            self.progress_bar.setFormat("❌ Fehler")
+            self.status_phase_label.setText("❌ Fehler – Pipeline abgebrochen")
+            self.status_phase_label.setStyleSheet(
+                "font-weight: bold; color: #c0392b; padding: 2px 0;"
+            )
         if result["success"]:
             msg = f"Video erstellt: {result['output_file']}"
             vid = result.get("video_id")

@@ -63,7 +63,7 @@ def reset_terminal():
             pass
 
 
-def run_video_pipeline(segments, options, log_callback=None):
+def run_video_pipeline(segments, options, log_callback=None, progress_callback=None, segment_status_callback=None):
     """
     Zentrale Video-Pipeline – wird von CLI und GUI gleichermaßen genutzt.
 
@@ -98,6 +98,14 @@ def run_video_pipeline(segments, options, log_callback=None):
         if log_callback:
             log_callback(msg)
         print(msg)
+
+    def progress(current, total, label):
+        if progress_callback:
+            progress_callback(current, total, label)
+
+    def seg_status(row, text, kind):
+        if segment_status_callback:
+            segment_status_callback(row, text, kind)
 
     input_dir = options.get('input_dir', 'input')
     output_file = options.get('output_file', None)
@@ -144,7 +152,8 @@ def run_video_pipeline(segments, options, log_callback=None):
         try:
             target_width, target_height, target_fps, needs_reencoding, \
                 source_codec, source_pix_fmt, source_fps_raw = \
-                analyze_video_resolutions(segments, input_dir, log_callback=log)
+                analyze_video_resolutions(segments, input_dir, log_callback=log,
+                                          progress_callback=progress_callback)
 
             assemble_ffmpeg_script(
                 segments, input_dir, output_file,
@@ -164,6 +173,8 @@ def run_video_pipeline(segments, options, log_callback=None):
                 no_bitrate_limit=no_bitrate_limit,
                 merge_videos=merge_videos,
                 chapter_transitions=chapter_transitions,
+                progress_callback=progress_callback,
+                segment_status_callback=segment_status_callback,
             )
         except Exception as e:
             reset_terminal()
@@ -175,6 +186,7 @@ def run_video_pipeline(segments, options, log_callback=None):
     # YouTube-Upload (nur wenn Videos gemerged wurden)
     video_id = None
     if merge_videos and options.get('youtube_upload', False):
+        progress(0, 1, "YouTube-Upload läuft…")
         log("Starte YouTube-Upload...")
         yt_chapters_path = Path("output/yt_chapters.txt")
         description = ""
