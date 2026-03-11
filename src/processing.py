@@ -413,7 +413,7 @@ def extract_single_segment(args):
 
         return (segment_file, processing_time, False, str(e), False)
 
-def assemble_ffmpeg_script(segments, input_dir, output_file, use_audio=True, target_width=1920, target_height=1080, target_fps=25, max_workers=None, debug_cache=False, youtube_opt=True, needs_reencoding=True, logo_path='input/teamlogo.png', log_callback=None, source_codec=None, source_pix_fmt=None, source_fps_raw=None, no_bitrate_limit=False):
+def assemble_ffmpeg_script(segments, input_dir, output_file, use_audio=True, target_width=1920, target_height=1080, target_fps=25, max_workers=None, debug_cache=False, youtube_opt=True, needs_reencoding=True, logo_path='input/teamlogo.png', log_callback=None, source_codec=None, source_pix_fmt=None, source_fps_raw=None, no_bitrate_limit=False, merge_videos=True, chapter_transitions=True):
     def log(msg):
         if log_callback:
             log_callback(msg)
@@ -504,12 +504,15 @@ def assemble_ffmpeg_script(segments, input_dir, output_file, use_audio=True, tar
             textclip_kwargs['source_codec'] = source_codec
             textclip_kwargs['source_pix_fmt'] = source_pix_fmt
             textclip_kwargs['source_fps_raw'] = source_fps_raw
-        textclip_file = create_textclip(
-            segment_number_in_game, current_game_number, title, subtitle,
-            **textclip_kwargs
-        )
+        textclip_file = None
+        if chapter_transitions:
+            textclip_file = create_textclip(
+                segment_number_in_game, current_game_number, title, subtitle,
+                **textclip_kwargs
+            )
         chapters.append((current_time, title, subtitle))
-        current_time += 1.0
+        if chapter_transitions:
+            current_time += 1.0
         start_time = segment['start_minute'] * 60
         duration = segment['length_seconds']
         try:
@@ -602,10 +605,27 @@ def assemble_ffmpeg_script(segments, input_dir, output_file, use_audio=True, tar
     if cached_segments > 0:
         log(f"  📦 {cached_segments} Segment(e) aus Cache wiederverwendet (nicht neu erstellt)")
         log(f"  ⚡ {completed_segments - cached_segments} Segment(e) neu erstellt")
+    if not merge_videos:
+        # Nur Segmente erstellen, nicht zusammenfügen
+        total_time = time.time() - start_time_overall
+        if total_time < 60:
+            total_time_str = f"{total_time:.0f} Sekunden"
+        elif total_time < 3600:
+            total_time_str = f"{total_time/60:.1f} Minuten"
+        else:
+            hours = int(total_time / 3600)
+            minutes = int((total_time % 3600) / 60)
+            total_time_str = f"{hours}h {minutes}min"
+        log(f"\n{'='*60}")
+        log(f"✓ FERTIG! Segmente gespeichert in: {segments_dir}")
+        log(f"⏱️  Gesamte Verarbeitungszeit: {total_time_str}")
+        log(f"{'='*60}\n")
+        return
     log(f"\n🎬 Phase 3: Füge Dateien in korrekter Reihenfolge zusammen...")
     all_files = []
     for i, meta in enumerate(segment_metadata):
-        all_files.append(meta['textclip'])
+        if chapter_transitions and meta.get('textclip'):
+            all_files.append(meta['textclip'])
         seg_index = meta['index']
         if seg_index in segment_results:
             all_files.append(segment_results[seg_index])
@@ -638,7 +658,7 @@ def assemble_ffmpeg_script(segments, input_dir, output_file, use_audio=True, tar
             width=target_width, height=target_height, fps=target_fps,
             no_bitrate_limit=no_bitrate_limit,
         )
-    log("Kombiniere Segmente mit Übergängen...")
+    log("Kombiniere Segmente" + (" mit Übergängen" if chapter_transitions else "") + "...")
     log(f"  CMD: {' '.join(str(c) for c in concat_cmd)}")
     global _concat_proc
     _concat_proc = subprocess.Popen(concat_cmd, stdin=subprocess.DEVNULL)

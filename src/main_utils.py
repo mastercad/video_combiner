@@ -108,6 +108,8 @@ def run_video_pipeline(segments, options, log_callback=None):
     debug_cache = options.get('debug_cache', False)
     logo_path = options.get('logo_path', 'input/teamlogo.png')
     upload_only = options.get('upload_only', False)
+    merge_videos = options.get('merge_videos', True)
+    chapter_transitions = options.get('chapter_transitions', True)
 
     if not segments:
         return {'success': False, 'output_file': None, 'video_id': None,
@@ -119,6 +121,8 @@ def run_video_pipeline(segments, options, log_callback=None):
     log(f"Input-Verzeichnis: {input_dir}")
     log(f"Audio: {'ja' if use_audio else 'nein'}")
     log(f"YouTube-Optimierung: {'ja' if youtube_opt else 'nein'}")
+    log(f"Videos mergen: {'ja' if merge_videos else 'nein'}")
+    log(f"Kapitelübergänge: {'ja' if chapter_transitions else 'nein'}")
     if no_bitrate_limit:
         log(f"Bitrate-Limit: deaktiviert (YouTube-Begrenzung ignoriert)")
     if logo_path and Path(logo_path).exists():
@@ -158,6 +162,8 @@ def run_video_pipeline(segments, options, log_callback=None):
                 source_pix_fmt=source_pix_fmt,
                 source_fps_raw=source_fps_raw,
                 no_bitrate_limit=no_bitrate_limit,
+                merge_videos=merge_videos,
+                chapter_transitions=chapter_transitions,
             )
         except Exception as e:
             reset_terminal()
@@ -166,9 +172,9 @@ def run_video_pipeline(segments, options, log_callback=None):
         finally:
             reset_terminal()
 
-    # YouTube-Upload
+    # YouTube-Upload (nur wenn Videos gemerged wurden)
     video_id = None
-    if options.get('youtube_upload', False):
+    if merge_videos and options.get('youtube_upload', False):
         log("Starte YouTube-Upload...")
         yt_chapters_path = Path("output/yt_chapters.txt")
         description = ""
@@ -201,5 +207,6 @@ def run_video_pipeline(segments, options, log_callback=None):
             log(f"YouTube-Upload fehlgeschlagen: {e}")
 
     log("Pipeline abgeschlossen.")
-    return {'success': True, 'output_file': output_file,
+    final_output = output_file if merge_videos else "output/segments"
+    return {'success': True, 'output_file': final_output,
             'video_id': video_id, 'error': None}

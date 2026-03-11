@@ -82,6 +82,26 @@ class YouTubeOptionsDialog(QDialog):
         )
         video_layout.addWidget(self.no_bitrate_limit_check)
 
+        self.merge_videos_check = QCheckBox(
+            "Videos mergen (alle Segmente zu einer Datei zusammenfügen)"
+        )
+        self.merge_videos_check.setToolTip(
+            "Wenn deaktiviert, werden nur die einzelnen Segmente erstellt\n"
+            "und nicht zu einem Gesamtvideo zusammengefügt."
+        )
+        self.merge_videos_check.setChecked(True)
+        video_layout.addWidget(self.merge_videos_check)
+
+        self.chapter_transitions_check = QCheckBox(
+            "Kapitelübergänge (Titelkarten zwischen Segmenten)"
+        )
+        self.chapter_transitions_check.setToolTip(
+            "Wenn deaktiviert, werden Segmente ohne Titelkarten\n"
+            "direkt aneinander gehängt."
+        )
+        self.chapter_transitions_check.setChecked(True)
+        video_layout.addWidget(self.chapter_transitions_check)
+
         cache_row = QHBoxLayout()
         self.clean_cache_btn = QPushButton("\U0001f9f9 Cache löschen")
         self.clean_cache_btn.setToolTip(
@@ -145,6 +165,8 @@ class YouTubeOptionsDialog(QDialog):
             "no_audio": self.no_audio_check.isChecked(),
             "no_youtube_opt": self.no_youtube_opt_check.isChecked(),
             "no_bitrate_limit": self.no_bitrate_limit_check.isChecked(),
+            "merge_videos": self.merge_videos_check.isChecked(),
+            "chapter_transitions": self.chapter_transitions_check.isChecked(),
             "shutdown_after": self.shutdown_check.isChecked(),
             "youtube_upload": self.youtube_upload_check.isChecked(),
             "youtube_title": self.youtube_title_edit.text().strip(),

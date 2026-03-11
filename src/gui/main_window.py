@@ -43,6 +43,8 @@ class VideoSegmentGUI(QMainWindow):
             "no_audio": False,
             "no_youtube_opt": False,
             "no_bitrate_limit": False,
+            "merge_videos": True,
+            "chapter_transitions": True,
             "shutdown_after": False,
             "youtube_upload": True,
             "youtube_title": "",
@@ -475,7 +477,8 @@ class VideoSegmentGUI(QMainWindow):
     def _update_total_duration(self):
         """Aktualisiert die Gesamtdauer-Anzeige (Segmente + je 1s Textclip)."""
         n = len(self.segments)
-        total_secs = sum(seg.get('length_seconds', 0) for seg in self.segments) + n  # +1s pro Textclip
+        has_transitions = self.options.get('chapter_transitions', True)
+        total_secs = sum(seg.get('length_seconds', 0) for seg in self.segments) + (n if has_transitions else 0)
         h = int(total_secs // 3600)
         m = int((total_secs % 3600) // 60)
         s = int(total_secs % 60)
@@ -596,6 +599,8 @@ class VideoSegmentGUI(QMainWindow):
         dlg.no_audio_check.setChecked(self.options["no_audio"])
         dlg.no_youtube_opt_check.setChecked(self.options["no_youtube_opt"])
         dlg.no_bitrate_limit_check.setChecked(self.options.get("no_bitrate_limit", False))
+        dlg.merge_videos_check.setChecked(self.options.get("merge_videos", True))
+        dlg.chapter_transitions_check.setChecked(self.options.get("chapter_transitions", True))
         dlg.shutdown_check.setChecked(self.options["shutdown_after"])
         dlg.youtube_upload_check.setChecked(self.options["youtube_upload"])
         dlg.youtube_title_edit.setText(self.options["youtube_title"])
@@ -625,6 +630,8 @@ class VideoSegmentGUI(QMainWindow):
             "no_audio": self.options["no_audio"],
             "youtube_opt": not self.options["no_youtube_opt"],
             "no_bitrate_limit": self.options.get("no_bitrate_limit", False),
+            "merge_videos": self.options.get("merge_videos", True),
+            "chapter_transitions": self.options.get("chapter_transitions", True),
             "workers": None,
             "debug_cache": False,
             "logo_path": self.options.get("logo_path", "") or "input/teamlogo.png",
